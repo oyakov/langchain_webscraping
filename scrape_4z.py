@@ -1,3 +1,4 @@
+from selenium.common import ElementClickInterceptedException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 
@@ -14,8 +15,6 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 CHROMEDRIVER_EXE = "./chromedriver.exe"
 
-pattern = re.compile(r'^.*[A-Za-z0-9]{24}$')
-
 # Fake browser-like headers
 BASE_HEADERS = {
     "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
@@ -26,30 +25,33 @@ BASE_HEADERS = {
 
 BASE_URL = "https://www.4zida.rs"
 
-LOCATION = "/beograd"
+LOCATION_BEOGRAD = "/beograd"
 
-TYPE_RENT = "/izdavanje-stanova"
+LOCATIONS = [LOCATION_BEOGRAD]
 
-def get_apart_links_from_the_page(page_number):
-    test_url = f"{BASE_URL}{TYPE_RENT}{LOCATION}/jednosoban?struktura=jednoiposoban&struktura=garsonjera&strana={page_number}"
-    print("Extracting links from the page {}", test_url)
+DEAL_TYPE_RENT = "/izdavanje-stanova"
+
+DEAL_TYPES = [DEAL_TYPE_RENT]
+
+def get_apart_links_from_the_page(page_number, location, deal_type):
+    search_url = f"{BASE_URL}{deal_type}{location}/jednosoban?struktura=jednoiposoban&struktura=garsonjera&strana={page_number}"
+    print("Extracting links from the search page {}", search_url)
     max_retries = 5
     backoff_factor = 3
     for attempt in range(max_retries):
         try:
-            response = requests.get(test_url, headers=BASE_HEADERS)#/proxies can be enabled if needed/, proxies=proxies)
+            response = requests.get(search_url, headers=BASE_HEADERS) #/proxies can be enabled if needed/, proxies=proxies)
             print(response)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
             apart_links = []
             all_links = soup.find_all('a', href=True)
             print(all_links)
-
+            apart_url_pattern = re.compile(r'^.*[A-Za-z0-9]{24}$') # ends with 24 symbol alphanumeric id
             for a_tag in all_links:
                 print(a_tag['href'])
-                if pattern.match(a_tag['href']):
+                if apart_url_pattern.match(a_tag['href']):
                     apart_links.append(a_tag['href'])
-
             return apart_links
         except ProxyError as e:
             wait_time = backoff_factor ** attempt
@@ -63,30 +65,70 @@ def get_apart_links_from_the_page(page_number):
             print(f"HTTP error: {e}. Retrying in {wait_time} seconds...")
             time.sleep(wait_time)
         except Exception as e:
-            print(f"Failed to get product links for query: {test_url}. Error: {e}")
+            print(f"Failed to get product links for query: {search_url}. Error: {e}")
             break
 
 def scrape_apartment(apart_link):
-    apart_url = f"{BASE_URL}{apart_link}"
+    apart_url = f"{apart_link}"
     response = requests.get(apart_url, headers=BASE_HEADERS)#/proxies can be enabled if needed/, proxies=proxies)
     print(response)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, 'html.parser')
     apartment = {}
     apartment["id"] = apart_link.rstrip('/').split('/')[-1]
-    apartment["link"] = apart_link
+    apartment["link"] = f"{BASE_URL}{apart_link}"
+    apartment["header"] = scrape_header(soup)
     apartment["price"] = scrape_price(soup)
-    apartment["telephone_number"] = scrape_telephone_number(apart_url)
+    apartment["contact_info"] = scrape_contact_info(apart_url)
     apartment["image_urls"] = scrape_image_urls(soup)
-    apartment["native_id"] = scrape_native_id(soup)  # like sifra oglasa
+    apartment["native_id"] = scrape_native_id(soup)  # like sifra oglasa on 4zida.rs
+    apartment["created_ago"] = scrape_created_ago(soup)
+    apartment["features"] = scrape_features(soup)
     print(apartment)
+    return apartment
+
+def scrape_created_ago(soup):
+    # Find <span class="font-medium"> elements whose text begins with "Oglas ažuriran:"
+    spans = soup.find_all(
+        "span",
+        class_="text-gray-600",
+        string=re.compile(r"^Oglas ažuriran:.*")
+    )
+    return spans
+
+def scrape_features(soup):
+    features = []
+    # 1. Find the <strong> with text "O stanu"
+    strong_tag = soup.find("strong", text="O stanu")
+    if strong_tag:
+        # 2. Go up to the parent <section>
+        section_tag = strong_tag.find_parent("section")
+        if section_tag:
+            # 3. Find the <ul> (or directly all the <li> tags)
+            ul_tag = section_tag.find("ul")
+            if ul_tag:
+                li_tags = ul_tag.find_all("li")
+                for li in li_tags:
+                    # 4. Each <li> has a <span>; get its text
+                    span = li.find("span")
+                    if span:
+                        item_text = span.get_text(strip=True)
+                        print(item_text)
+                        features.append(item_text)
+
+    return features
+
+def scrape_header(soup):
+    # Find all <h1> elements with these exact classes
+    h1_tags = soup.find_all('h1', class_='text-2xl font-medium leading-none')
+    return h1_tags[0].get_text()
 
 def scrape_native_id(soup):
     # Find <span class="font-medium"> elements whose text begins with "4zida"
     spans = soup.find_all(
         "span",
         class_="font-medium",
-        string=re.compile(r"^4zida")
+        string=re.compile(r"^4zida.*")
     )
 
     for span in spans:
@@ -106,7 +148,7 @@ def scrape_image_urls(soup):
         if src:
             image_urls.append(src)
 
-    return image_urls
+    return [url for url in image_urls if url.endswith("webp#1920")]
 
 def scrape_price(soup):
     p_tags_with_test_data = soup.find_all('p', attrs={'test-data': 'ad-price'})
@@ -116,11 +158,14 @@ def scrape_price(soup):
     return price
 
 
-def scrape_telephone_number(apart_url):
-    print(f"scrape_telephone_number - {apart_url}")
+def scrape_contact_info(apart_url):
+    print(f"scrape_contact_info - {apart_url}")
 
+    # Need to click button so use Selenium here
     chrome_driver_path = CHROMEDRIVER_EXE
     options = webdriver.ChromeOptions()
+    options.add_argument('--ignore-certificate-errors')
+    options.add_argument('--headless')  # Run in headless mode
     driver = webdriver.Chrome(service=Service(chrome_driver_path), options=options)
 
     try:
@@ -136,17 +181,36 @@ def scrape_telephone_number(apart_url):
         # Click the span
         link_element.click()
         print("Clicked 'Prikaži broj telefona'...")
-
+        time.sleep(2)
         # Wait for the phone number link to appear in the popup
         # Here, we look for an <a> that starts with href="tel:"
-        phone_element = wait.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href^="tel:"]'))
+        phone_elements = wait.until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'a[href^="tel:"]'))
         )
 
-        # Extract the text directly from the newly appeared <a> element
-        phone_number_text = phone_element.text
-        print("Phone number text:", phone_number_text)
-        return phone_number_text
+        # Extract text from each phone link
+        phone_numbers = []
+        for elem in phone_elements:
+            text = elem.text.strip()
+            if text:
+                phone_numbers.append(text)
+        print("Phone numbers:", phone_numbers)
+
+        # Wait for the <span class="font-medium text-primary-500">Name</span> and get the text
+        name_element = wait.until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, 'span.font-medium.text-primary-500')
+            )
+        )
+        name_text = name_element.text.strip()
+        print("Name:", name_text)
+
+        # Return the scraped info
+        return {"phone_numbers": phone_numbers, "name": name_text}
+    except ElementClickInterceptedException as e:
+        return ["Click intercepted error"]
+    except Exception as exc:
+        return ["Error scraping phone number"]
     finally:
         driver.quit()
 
