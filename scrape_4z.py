@@ -35,21 +35,18 @@ DEAL_TYPES = [DEAL_TYPE_RENT]
 
 def get_apart_links_from_the_page(page_number, location, deal_type):
     search_url = f"{BASE_URL}{deal_type}{location}/jednosoban?struktura=jednoiposoban&struktura=garsonjera&strana={page_number}&sortiranje=najnoviji"
-    print("Extracting links from the search page {}", search_url)
+    print(f"Extracting links from the search page {search_url}")
     max_retries = 5
     backoff_factor = 3
     for attempt in range(max_retries):
         try:
             response = requests.get(search_url, headers=BASE_HEADERS) #/proxies can be enabled if needed/, proxies=proxies)
-            print(response)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
             apart_links = []
             all_links = soup.find_all('a', href=True)
-            print(all_links)
             apart_url_pattern = re.compile(r'^.*[A-Za-z0-9]{24}$') # ends with 24 symbol alphanumeric id
             for a_tag in all_links:
-                print(a_tag['href'])
                 if apart_url_pattern.match(a_tag['href']):
                     apart_links.append(a_tag['href'])
             return apart_links
@@ -69,7 +66,9 @@ def get_apart_links_from_the_page(page_number, location, deal_type):
             break
 
 def scrape_apartment(apart_link):
-    apart_url = f"{apart_link}"
+    print(f"Scraping apartment link {apart_link}")
+    apart_url = f"{BASE_URL}{apart_link}"
+    print(f"Full apart URL: {apart_url}")
     response = requests.get(apart_url, headers=BASE_HEADERS)#/proxies can be enabled if needed/, proxies=proxies)
     print(response)
     response.raise_for_status()
