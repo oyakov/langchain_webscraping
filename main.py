@@ -1,7 +1,7 @@
 import streamlit as st
 from sqlalchemy.dialects.postgresql import array
 from streamlit import session_state
-
+import time
 from elastic_repository import index_apartment_to_elastic
 from parse_apart_llm import parse_apart_with_ollama
 from scrape_4z import get_apart_links_from_the_page, scrape_apartment, LOCATION_BEOGRAD, DEAL_TYPE_RENT
@@ -11,7 +11,7 @@ st.title("Belgrade Apartment Web Scraper")
 # Create tab objects
 paged, specific_apart, tab3 = st.tabs(["4zida beograd by page", "4zida specific apart url checker", "Tab 3"])
 
-MAX_PAGE = 3
+MAX_PAGE = 10
 
 # Add content to each tab
 with paged:
@@ -20,21 +20,35 @@ with paged:
 
         all_apart_links = []
         for page_number in range(1, MAX_PAGE):
-            apart_links: array[str] = get_apart_links_from_the_page(page_number=page_number,
-                                                                    location=LOCATION_BEOGRAD,
-                                                                    deal_type=DEAL_TYPE_RENT)
-            print(apart_links)
-            print(len(apart_links))
-            unique_apart_links = list(set(apart_links))
-            print(unique_apart_links)
-            print(len(unique_apart_links))
-            all_apart_links.append(unique_apart_links)
+            print("Scraping page {}", page_number)
+            try:
+                apart_links: array[str] = get_apart_links_from_the_page(page_number=page_number,
+                                                                        location=LOCATION_BEOGRAD,
+                                                                        deal_type=DEAL_TYPE_RENT)
+                print(apart_links)
+                print(len(apart_links))
+                unique_apart_links = list(set(apart_links))
+                print(unique_apart_links)
+                print(len(unique_apart_links))
+                all_apart_links.append(unique_apart_links)
+                print("Waiting 5 seconds")
+                time.sleep(5)
+            except Exception as e:
+                print("Error getting links from the page: {}", e)
+                break
 
-        first_apart = all_apart_links[0][0]
-        print(f"First apart {first_apart}")
-        apartment = scrape_apartment(first_apart)
+        print("Scraped total {} apartment links, now scraping individual apartments", len(all_apart_links))
 
-        index_apartment_to_elastic(apartment)
+        for apart_page in range(0, len(all_apart_links)):
+            print("Scraping apartments from page {}", apart_page)
+            for apart_num in range(0, len(all_apart_links[apart_page])):
+                apart = all_apart_links[apart_page][apart_num]
+                print(f"Processing apart {apart}")
+                apartment = scrape_apartment(apart)
+                print("Apartment scraped, adding to elastic")
+                index_apartment_to_elastic(apartment)
+                print("Apartment added to elastic, waiting before making next request")
+                time.sleep(5)
 
         st.session_state.dom_content = apartment
         with st.expander("View Apartments"):

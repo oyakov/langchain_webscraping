@@ -1,17 +1,17 @@
-from selenium.common import ElementClickInterceptedException
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
-
-import selenium.webdriver as webdriver
-from bs4 import BeautifulSoup
-from selenium.webdriver.chrome.service import Service
-import requests
-import time
-from requests.exceptions import ProxyError, HTTPError
-
 import re
+import time
 
+import dateparser
+import requests
+import undetected_chromedriver as uc
+from bs4 import BeautifulSoup
+from requests.exceptions import ProxyError, HTTPError
+from selenium.common import ElementClickInterceptedException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
+
+from custom_parser import parse_serbian_relative_time
 
 CHROMEDRIVER_EXE = "./chromedriver.exe"
 
@@ -34,7 +34,7 @@ DEAL_TYPE_RENT = "/izdavanje-stanova"
 DEAL_TYPES = [DEAL_TYPE_RENT]
 
 def get_apart_links_from_the_page(page_number, location, deal_type):
-    search_url = f"{BASE_URL}{deal_type}{location}/jednosoban?struktura=jednoiposoban&struktura=garsonjera&strana={page_number}"
+    search_url = f"{BASE_URL}{deal_type}{location}/jednosoban?struktura=jednoiposoban&struktura=garsonjera&strana={page_number}&sortiranje=najnoviji"
     print("Extracting links from the search page {}", search_url)
     max_retries = 5
     backoff_factor = 3
@@ -91,10 +91,19 @@ def scrape_created_ago(soup):
     # Find <span class="font-medium"> elements whose text begins with "Oglas ažuriran:"
     spans = soup.find_all(
         "span",
-        class_="text-gray-600",
-        string=re.compile(r"^Oglas ažuriran:.*")
+        class_="text-gray-600"
     )
-    return spans
+
+    for span in spans:
+        print(span)
+        # Get the full text (e.g., "Oglas ažuriran")
+        text = span.get_text(strip=True)
+        if text.startswith("Oglas ažuriran"):
+            cre_ago = text.split(":")[1]
+            print("Found Created Ago:", cre_ago)
+            dt = parse_serbian_relative_time(cre_ago)  # Force Serbian language
+            print(dt)
+            return dt
 
 def scrape_features(soup):
     features = []
@@ -127,11 +136,11 @@ def scrape_native_id(soup):
     # Find <span class="font-medium"> elements whose text begins with "4zida"
     spans = soup.find_all(
         "span",
-        class_="font-medium",
-        string=re.compile(r"^4zida.*")
+        class_="font-medium"
     )
 
     for span in spans:
+        print(span)
         # Get the full text (e.g., "4zida-4759")
         zid_id = span.get_text(strip=True)
         print("Found ID:", zid_id)
@@ -162,11 +171,16 @@ def scrape_contact_info(apart_url):
     print(f"scrape_contact_info - {apart_url}")
 
     # Need to click button so use Selenium here
-    chrome_driver_path = CHROMEDRIVER_EXE
-    options = webdriver.ChromeOptions()
+    # chrome_driver_path = CHROMEDRIVER_EXE
+    # options = webdriver.ChromeOptions()
+    # options.add_argument('--ignore-certificate-errors')
+    # options.add_argument('--headless')  # Run in headless mode
+    # driver = webdriver.Chrome(service=Service(chrome_driver_path), options=options)
+
+    options = uc.ChromeOptions()
     options.add_argument('--ignore-certificate-errors')
     options.add_argument('--headless')  # Run in headless mode
-    driver = webdriver.Chrome(service=Service(chrome_driver_path), options=options)
+    driver = uc.Chrome(headless=True, options=options)
 
     try:
         driver.get(apart_url)
@@ -219,8 +233,8 @@ def scrape_website(website):
     print("Launching chrome browser...")
 
     chrome_driver_path = "./chromedriver.exe"
-    options = webdriver.ChromeOptions()
-    driver = webdriver.Chrome(service=Service(chrome_driver_path), options=options)
+    options = uc.ChromeOptions()
+    driver = uc.Chrome(headless=True, options=options)
 
     try:
         driver.get(website)
