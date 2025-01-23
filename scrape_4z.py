@@ -25,16 +25,24 @@ BASE_HEADERS = {
 
 BASE_URL = "https://www.4zida.rs"
 
-LOCATION_BEOGRAD = "/beograd"
+LOCATION_BEOGRAD = "beograd"
 
 LOCATIONS = [LOCATION_BEOGRAD]
 
-DEAL_TYPE_RENT = "/izdavanje-stanova"
+DEAL_TYPE_RENT = "izdavanje-stanova"
 
 DEAL_TYPES = [DEAL_TYPE_RENT]
 
-def get_apart_links_from_the_page(page_number, location, deal_type):
-    search_url = f"{BASE_URL}{deal_type}{location}/jednosoban?struktura=jednoiposoban&struktura=garsonjera&strana={page_number}&sortiranje=najnoviji"
+ONE_ROOM = "jednosoban"
+
+APART_STRUCTURES = [ONE_ROOM]
+
+NEWEST_FIRST = "najnoviji"
+
+SORTINGS = [NEWEST_FIRST]
+
+def get_apart_links_from_the_page(page_number, apart_location, apart_structure, sorting, deal_type):
+    search_url = f"{BASE_URL}/{deal_type}/{apart_location}/{apart_structure}?strana={page_number}&sortiranje={sorting}"
     print(f"Extracting links from the search page {search_url}")
     max_retries = 5
     backoff_factor = 3

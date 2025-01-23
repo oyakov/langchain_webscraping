@@ -4,7 +4,8 @@ from streamlit import session_state
 import time
 from elastic_repository import index_apartment_to_elastic, search
 from parse_apart_llm import parse_apart_with_ollama
-from scrape_4z import get_apart_links_from_the_page, scrape_apartment, LOCATION_BEOGRAD, DEAL_TYPE_RENT
+from scrape_4z import get_apart_links_from_the_page, scrape_apartment, LOCATION_BEOGRAD, DEAL_TYPE_RENT, ONE_ROOM, \
+    NEWEST_FIRST
 
 st.title("Belgrade Apartment Web Scraper")
 
@@ -23,8 +24,10 @@ with paged:
             print(f"Scraping page {page_number}")
             try:
                 apart_links: array[str] = get_apart_links_from_the_page(page_number=page_number,
-                                                                        location=LOCATION_BEOGRAD,
-                                                                        deal_type=DEAL_TYPE_RENT)
+                                                                        apart_location=LOCATION_BEOGRAD,
+                                                                        deal_type=DEAL_TYPE_RENT,
+                                                                        apart_structure=ONE_ROOM,
+                                                                        sorting=NEWEST_FIRST)
                 print(f"There were {len(apart_links)} total apart links scraped")
                 unique_apart_links = list(set(apart_links))
                 print(f"There were {len(unique_apart_links)} unique apart links")
